@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doppel – Live Transcription</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #333;
+      margin-bottom: 24px;
+      font-weight: 600;
+    }
+
+    /* ---- two-panel layout ---- */
+    .panels {
+      display: flex;
+      gap: 24px;
+      width: 100%;
+      max-width: 1480px;
+    }
+
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    /* ---- document area ---- */
+    .page {
+      flex: 1;
+      width: 100%;
+      min-height: 500px;
+      background: #fff;
+      border: 1px solid #d0d0d0;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      padding: 48px 56px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 16px;
+      line-height: 1.8;
+      color: #222;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      outline: none;
+    }
+
+    #rawPage:empty::before {
+      content: 'Raw voice transcription will appear here …';
+      color: #bbb;
+      font-style: italic;
+    }
+
+    #polishedPage:empty::before {
+      content: 'Restructured text will appear here …';
+      color: #bbb;
+      font-style: italic;
+    }
+
+    /* ---- controls ---- */
+    .controls {
+      margin-top: 24px;
+    }
+
+    #btn {
+      font-size: 1rem;
+      width: 200px;
+      height: 48px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      background: #2563eb;
+      transition: background .2s;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    #btn:hover { background: #1d4ed8; }
+
+    #btn.recording {
+      background: #dc2626;
+    }
+
+    #btn.recording:hover {
+      background: #b91c1c;
+    }
+
+    #clearBtn {
+      font-size: 1rem;
+      width: 200px;
+      height: 48px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      background: #6b7280;
+      transition: background .2s;
+      margin-left: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    #clearBtn:hover { background: #4b5563; }
+
+    /* pulse dot while recording */
+    #btn.recording::before {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: #fff;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: .3; }
+    }
+
+    /* spinner while finishing */
+    #btn.finishing {
+      background: #f59e0b;
+      pointer-events: none;
+    }
+
+    #btn.finishing::before {
+      content: '';
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: spin .6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Doppel</h1>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-title">Raw Voice Input</div>
+      <div id="rawPage" class="page"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Restructured Text</div>
+      <div id="polishedPage" class="page" contenteditable="true"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="btn">Start Recording</button>
+    <button id="clearBtn">Clear Page</button>
+  </div>
+
+  <script>
+    const rawPage      = document.getElementById('rawPage');
+    const polishedPage = document.getElementById('polishedPage');
+    const btn          = document.getElementById('btn');
+    const clearBtn     = document.getElementById('clearBtn');
+
+
+
+    clearBtn.addEventListener('click', () => {
+      rawPage.textContent = '';
+      polishedPage.textContent = '';
+      rawPage.focus();
+    });
+
+    let recording = false;
+    let evtSource = null;
+    // Track where the raw text was before this recording session started
+    let rawLengthBeforeRecording = 0;
+    // Resolve function set during stop – called when the SSE done signal arrives
+    let streamDoneResolve = null;
+
+    btn.addEventListener('click', async () => {
+      if (!recording) {
+        // --- START ---
+        // Remember current raw length so we know what's "new" on stop
+        rawLengthBeforeRecording = rawPage.textContent.length;
+
+        await fetch('/start', { method: 'POST' });
+        recording = true;
+        btn.textContent = 'Stop';
+        btn.classList.add('recording');
+
+        // open SSE stream – single handler for the entire lifecycle
+        evtSource = new EventSource('/stream');
+        evtSource.onmessage = (e) => {
+          const data = JSON.parse(e.data);
+          if (data.done) {
+            // Sentinel arrived – transcription is fully flushed
+            evtSource.close();
+            evtSource = null;
+            if (streamDoneResolve) {
+              streamDoneResolve();
+              streamDoneResolve = null;
+            }
+            return;
+          }
+          if (data.text) {
+            rawPage.textContent += data.text + ' ';
+            rawPage.scrollTop = rawPage.scrollHeight;
+          }
+        };
+      } else {
+        // --- STOP ---
+        btn.textContent = 'Transcribing…';
+        btn.classList.remove('recording');
+        btn.classList.add('finishing');
+        recording = false;
+
+        // Tell backend to stop recording; it will flush remaining audio
+        await fetch('/stop', { method: 'POST' });
+
+        // Wait for the SSE done signal (may have already arrived)
+        if (evtSource) {
+          await new Promise((resolve) => { streamDoneResolve = resolve; });
+        }
+
+        // --- AUTO-POLISH only the newly recorded portion ---
+        const newText = rawPage.textContent.substring(rawLengthBeforeRecording).trim();
+        if (newText) {
+          btn.textContent = 'Polishing…';
+
+          try {
+            const resp = await fetch('/polish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: newText }),
+            });
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            // Add separator if there's already polished text
+            if (polishedPage.textContent.trim()) {
+              polishedPage.textContent += '\n\n';
+            }
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+
+              const lines = buffer.split('\n');
+              buffer = lines.pop();
+
+              for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const data = JSON.parse(line.slice(6));
+                if (data.error) {
+                  polishedPage.textContent += 'Error: ' + data.error;
+                  break;
+                }
+                if (data.token) {
+                  polishedPage.textContent += data.token;
+                  polishedPage.scrollTop = polishedPage.scrollHeight;
+                }
+              }
+            }
+          } catch (err) {
+            polishedPage.textContent += 'Error: ' + err.message;
+          }
+        }
+
+        btn.textContent = 'Start Recording';
+        btn.classList.remove('finishing');
+      }
+    });
+  </script>
+
+</body>
+</html>
