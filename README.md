@@ -30,11 +30,11 @@ Open http://localhost:5000 in your browser. Hit **Start Recording**, talk, hit *
 **Clear Page** wipes both panels. Recording again appends new text without clearing previous output.
 
 ## Roadmap
-
+- [x] Real-time voice transcription via Whisper
+- [x] Reformat and clean text with Mistral LLM
 - [x] Smart GPU memory sharing between models
 - [x] Backend/frontend separation
-- [x] Auto-retry on model failures
-- [ ] Desktop app (no browser needed)
-- [ ] Packaged installer (.exe)
+- [ ] Pivot to desktop app
+- [ ] Packaged installer for publishing (.exe)
 - [ ] Learn your writing style from uploaded docs
 - [ ] UI overhaul
