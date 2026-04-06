@@ -120,3 +120,11 @@ def writing_style():
     """Return the currently saved writing style."""
     style = engine.get_writing_style()
     return jsonify(style=style)
+
+
+@bp.route("/writing-style", methods=["DELETE"])
+def delete_writing_style():
+    """Delete the saved writing style."""
+    from core.style_learner import delete_style
+    delete_style()
+    return jsonify(ok=True)

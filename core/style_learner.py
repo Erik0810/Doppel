@@ -235,3 +235,9 @@ def load_style() -> str | None:
             data = json.load(f)
         return data.get("style")
     return None
+
+
+def delete_style():
+    if os.path.exists(STYLE_FILE):
+        os.remove(STYLE_FILE)
+        log.info("Writing style deleted from %s", STYLE_FILE)
