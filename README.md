@@ -8,6 +8,8 @@ Two-panel UI: left side shows raw transcription, right side shows the cleaned ve
 
 ![Usage example](static/usage_example.png)
 
+![Customization example](static/customization_example.png)
+
 ## Requirements
 
 - Python 3.10+
