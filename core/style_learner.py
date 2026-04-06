@@ -13,32 +13,48 @@ import requests
 log = logging.getLogger(__name__)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "mistral"
+STYLE_LEARN_MODEL = "deepseek-r1:14b"
 
 STYLE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "writing_style.json")
 
-STYLE_EXTRACT_PROMPT = """\
-You extract mechanical writing style patterns from text samples. Your output will be used as instructions to make OTHER text match this writer's style. The instructions must work for ANY topic.
+STYLE_SYSTEM_MSG = "You are a linguistic analyst. You ONLY analyse writing mechanics. You ALWAYS respond in English regardless of the input language."
 
-EXAMPLES OF GOOD BULLETS (specific, actionable, topic-free):
-- "Sentences average 20-30 words, mixing long compound sentences with occasional short punchy ones"
-- "Heavily uses passive voice ('is demonstrated', 'was observed', 'can be seen')"
-- "Opens paragraphs with a topic sentence, then expands with 2-3 supporting sentences"
-- "Frequently uses hedging: 'may', 'could', 'suggests', 'it is possible that'"
-- "Connects ideas with transitions like 'furthermore', 'however', 'in contrast', 'this highlights'"
-- "Uses parenthetical asides to add clarification mid-sentence"
-- "Writes in third person impersonal — avoids 'I' and 'you'"
-- "Tends to restate a point in different words immediately after making it"
-- "Uses colons to introduce explanations or elaborations"
+STYLE_PASS1_TEMPLATE = """\
+I will show you a text. Do NOT read it for meaning. Instead, answer these specific questions about HOW it is written. Respond in English.
 
-EXAMPLES OF BAD BULLETS (too vague, or mentions content):
-- "Use of academic references" ← BAD, refers to content
-- "Informative and educational tone" ← BAD, too vague
-- "Good use of grammar" ← BAD, meaningless
-- "Discusses social implications" ← BAD, refers to content
-- "Uses technical terms relevant to the topic" ← BAD, refers to content
+TEXT:
+\"\"\"
+{text}
+\"\"\"
 
-Produce 8-15 bullets like the GOOD examples above. Every bullet must be a concrete, actionable writing instruction. Output ONLY the bullet list — no preamble, no headers."""
+Answer each question with specific evidence. Do NOT discuss the topic or content.
+
+1. What is the average sentence length in words? Count 5 representative sentences and give their word counts.
+2. List 5 exact sentence-opening words or phrases from the text (the first 3-4 words of different sentences).
+3. Find 3 verb phrases. Are they active ("X causes Y") or passive ("Y is caused by X")? Quote them.
+4. List every transition word or connecting phrase you can find (e.g. "however", "this means", "furthermore", "in addition").
+5. Find 3 examples of either hedging ("may", "could", "suggests") or certainty ("clearly", "demonstrates", "shows"). Quote them exactly.
+6. Pick 2 sentences and describe their clause structure — are they simple (one clause) or complex (main + subordinate clauses)?
+7. List 5 vocabulary words that indicate the formality level. Are they everyday words or elevated/formal ones?
+8. Look at any 3 consecutive sentences. How does sentence 2 connect to sentence 1? Does it repeat a keyword, use a pronoun reference, or use a transition word?"""
+
+STYLE_PASS2_TEMPLATE = """\
+Below is a mechanical analysis of someone's writing. Convert it into 8-12 bullet-point style rules that could be applied when rewriting ANY short text to match this person's voice.
+
+ANALYSIS:
+{analysis}
+
+FORMAT RULES:
+- Each bullet starts with "- "
+- Each bullet must be a concrete, actionable instruction (e.g. "Use passive voice constructions like 'is demonstrated by', 'was observed to'")
+- Include example words/phrases in quotes where possible
+- Do NOT mention any specific topic, subject, or field
+- These rules will be applied to a 5-10 sentence paragraph, so focus on sentence-level patterns only
+- Respond in English
+
+Output ONLY the bullet list. No preamble."""
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
@@ -60,12 +76,51 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
+def _chat_collect(model: str, system: str, user: str, timeout: int = 600) -> str:
+    """Send a chat request and collect the full response, stripping <think> blocks."""
+    resp = requests.post(
+        OLLAMA_CHAT_URL,
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": True,
+        },
+        stream=True,
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+
+    tokens = []
+    for line in resp.iter_lines():
+        if line:
+            chunk = json.loads(line)
+            token = chunk.get("message", {}).get("content", "")
+            if token:
+                tokens.append(token)
+            if chunk.get("done"):
+                break
+
+    full = "".join(tokens).strip()
+    # Strip thinking block if present
+    if "</think>" in full:
+        full = full.split("</think>", 1)[1].strip()
+    return full
+
+
 def learn_style(combined_text: str):
-    """Send combined document text to Ollama and yield progress/result dicts.
+    """Two-pass style extraction via deepseek-r1.
+
+    Pass 1: Answer specific mechanical questions about the writing (forces
+            the model to look at HOW the text is written).
+    Pass 2: Convert the raw analysis into actionable style rules.
 
     Yields:
-        {"status": "learning"}           – work has started
-        {"token": str}                   – streamed token from the model
+        {"status": str}                  – phase updates
+        {"thinking": str}                – reasoning token (for UI feedback)
+        {"token": str}                   – answer token from the model
         {"done": True, "style": str}     – final style string
         {"error": str}                   – on failure
     """
@@ -78,41 +133,66 @@ def learn_style(combined_text: str):
     yield {"status": "learning"}
 
     try:
-        log.info("Sending style-extraction request to Ollama (%s) – %d chars",
-                 OLLAMA_MODEL, len(combined_text))
+        # ---- PASS 1: Mechanical analysis (non-streamed, collected) ----
+        log.info("Pass 1: Extracting mechanical observations (%s) – %d chars",
+                 STYLE_LEARN_MODEL, len(combined_text))
+        yield {"status": "analyzing"}
+
+        analysis = _chat_collect(
+            STYLE_LEARN_MODEL,
+            STYLE_SYSTEM_MSG,
+            STYLE_PASS1_TEMPLATE.format(text=combined_text),
+        )
+        log.info("Pass 1 complete – %d chars of analysis", len(analysis))
+
+        # ---- PASS 2: Synthesize into style rules (streamed) ----
+        log.info("Pass 2: Synthesizing style rules")
+        yield {"status": "synthesizing"}
 
         resp = requests.post(
-            OLLAMA_URL,
+            OLLAMA_CHAT_URL,
             json={
-                "model": OLLAMA_MODEL,
-                "prompt": (
-                    "Analyse ONLY the writing style of the following text. "
-                    "Do NOT summarize, rephrase, or respond to the content.\n\n"
-                    "--- BEGIN WRITING SAMPLE ---\n"
-                    f"{combined_text}\n"
-                    "--- END WRITING SAMPLE ---\n\n"
-                    "Now list the stylistic patterns as bullet points:"
-                ),
-                "system": STYLE_EXTRACT_PROMPT,
+                "model": STYLE_LEARN_MODEL,
+                "messages": [
+                    {"role": "system", "content": STYLE_SYSTEM_MSG},
+                    {"role": "user", "content": STYLE_PASS2_TEMPLATE.format(analysis=analysis)},
+                ],
                 "stream": True,
             },
             stream=True,
-            timeout=180,
+            timeout=600,
         )
         resp.raise_for_status()
 
-        style_parts = []
+        all_tokens = []
+        in_thinking = False
         for line in resp.iter_lines():
             if line:
                 chunk = json.loads(line)
-                token = chunk.get("response", "")
+                token = chunk.get("message", {}).get("content", "")
                 if token:
-                    style_parts.append(token)
-                    yield {"token": token}
+                    all_tokens.append(token)
+                    accumulated = "".join(all_tokens)
+
+                    if "<think>" in accumulated and not in_thinking:
+                        in_thinking = True
+                    if in_thinking and "</think>" not in accumulated:
+                        yield {"thinking": token}
+                    elif in_thinking and "</think>" in accumulated:
+                        in_thinking = False
+                        yield {"thinking": token}
+                    else:
+                        yield {"token": token}
+
                 if chunk.get("done"):
                     break
 
-        full_style = "".join(style_parts).strip()
+        full_output = "".join(all_tokens).strip()
+        if "</think>" in full_output:
+            full_style = full_output.split("</think>", 1)[1].strip()
+        else:
+            full_style = full_output
+
         save_style(full_style)
         yield {"done": True, "style": full_style}
 
@@ -122,6 +202,23 @@ def learn_style(combined_text: str):
     except Exception as e:
         log.exception("Unexpected error during style extraction")
         yield {"error": str(e)}
+    finally:
+        # Unload deepseek-r1 from VRAM so it doesn't compete with
+        # Whisper and Mistral during normal recording/polishing.
+        _unload_model(STYLE_LEARN_MODEL)
+
+
+def _unload_model(model_name: str):
+    """Tell Ollama to immediately unload a model from memory."""
+    try:
+        requests.post(
+            OLLAMA_URL,
+            json={"model": model_name, "keep_alive": 0},
+            timeout=10,
+        )
+        log.info("Unloaded %s from Ollama VRAM", model_name)
+    except Exception:
+        log.warning("Failed to unload %s – it may linger in VRAM", model_name)
 
 
 def save_style(style_text: str):

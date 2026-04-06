@@ -314,6 +314,30 @@
       overflow-y: auto;
     }
 
+    .thinking-status {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #92400e;
+      display: none;
+    }
+
+    .thinking-status::before {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid rgba(146,64,14,.3);
+      border-top-color: #92400e;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+    }
+
     .style-status {
       margin-top: 8px;
       font-size: 0.8rem;
@@ -358,6 +382,7 @@
         </div>
         <ul class="file-list" id="fileList"></ul>
         <button id="learnBtn" disabled>Learn Writing Style</button>
+        <div class="thinking-status" id="thinkingStatus">Analysing writing patterns…</div>
         <div class="style-output" id="styleOutput" style="display:none;"></div>
         <div class="style-status" id="styleStatus"></div>
       </div>
@@ -378,6 +403,7 @@
     const fileInput     = document.getElementById('fileInput');
     const fileListEl    = document.getElementById('fileList');
     const learnBtn      = document.getElementById('learnBtn');
+    const thinkingStatus = document.getElementById('thinkingStatus');
     const styleOutput   = document.getElementById('styleOutput');
     const styleStatus   = document.getElementById('styleStatus');
 
@@ -469,6 +495,7 @@
       learnBtn.disabled = true;
       learnBtn.textContent = 'Learning…';
       learnBtn.classList.add('learning');
+      thinkingStatus.style.display = 'none';
       styleOutput.style.display = 'none';
       styleOutput.textContent = '';
       styleStatus.textContent = '';
@@ -497,15 +524,35 @@
             if (!line.startsWith('data: ')) continue;
             const data = JSON.parse(line.slice(6));
 
+            if (data.status) {
+              const labels = {
+                learning: 'Preparing…',
+                analyzing: 'Pass 1: Analysing writing mechanics…',
+                synthesizing: 'Pass 2: Synthesizing style rules…',
+              };
+              thinkingStatus.textContent = labels[data.status] || data.status;
+              thinkingStatus.style.display = 'block';
+              learnBtn.textContent = labels[data.status] || 'Learning…';
+            }
             if (data.error) {
+              thinkingStatus.style.display = 'none';
+              styleOutput.style.display = 'block';
               styleOutput.textContent += '\nError: ' + data.error;
               break;
             }
+            if (data.thinking) {
+              // Show thinking indicator while model reasons
+              thinkingStatus.style.display = 'block';
+            }
             if (data.token) {
+              // First real token — hide thinking, show output
+              thinkingStatus.style.display = 'none';
+              styleOutput.style.display = 'block';
               styleOutput.textContent += data.token;
               styleOutput.scrollTop = styleOutput.scrollHeight;
             }
             if (data.done) {
+              thinkingStatus.style.display = 'none';
               styleStatus.textContent = '✓ Writing style saved';
               styleStatus.className = 'style-status has-style';
             }
@@ -516,6 +563,7 @@
         styleOutput.textContent = 'Error: ' + err.message;
       }
 
+      thinkingStatus.style.display = 'none';
       learnBtn.textContent = 'Learn Writing Style';
       learnBtn.classList.remove('learning');
       learnBtn.disabled = selectedFiles.length === 0;

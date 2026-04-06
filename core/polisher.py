@@ -12,31 +12,33 @@ from core.style_learner import load_style
 log = logging.getLogger(__name__)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "mistral"
 
-POLISH_PROMPT = """\
-You are a text cleanup assistant. You receive raw speech-to-text transcription.
+POLISH_SYSTEM = """\
+You clean up raw speech-to-text transcription. You fix grammar, remove filler words, and make it read clearly.
 
-Your ONLY job is to clean up the transcription:
-1. Remove filler words (um, uh, you know, like, so, okay), false starts, and repeated phrases.
-2. Fix obvious mistranscriptions and grammar errors.
-3. Restructure into clear, well-punctuated sentences and paragraphs.
+ABSOLUTE CONSTRAINTS:
+- The output must have the SAME NUMBER of sentences as the input (±1).
+- The output must be SHORTER than or equal to the input in word count.
+- NEVER add information, examples, explanations, lists, or conclusions.
+- NEVER split one sentence into a paragraph or numbered list.
+- If the speaker said 2 things, output 2 things. Nothing more."""
 
-CRITICAL RULES:
-- NEVER add, invent, or fabricate information that is not in the original transcription.
-- NEVER change the meaning or topic of what was said.
-- If the input is casual or non-technical, keep it casual — just make it read cleanly.
-- Do NOT wrap output in quotation marks.
-- Do NOT add labels like "From your transcription:" or any other headers/prefixes.
-- Output ONLY the cleaned-up text. No preamble, no commentary, no framing."""
+POLISH_USER_TEMPLATE = """\
+Clean up this raw transcription. Keep the same number of sentences. Remove filler words, fix grammar, make it read smoothly. Do NOT add any new content.
 
+Raw transcription:
+{text}"""
 
-def _build_system_prompt() -> str:
-    """Build the full system prompt, injecting the user's writing style if available."""
-    style = load_style()
-    if style:
-        return POLISH_PROMPT + "\n\nAdditionally, match the following writing style:\n" + style
-    return POLISH_PROMPT
+POLISH_USER_TEMPLATE_STYLED = """\
+Clean up this raw transcription. Keep the same number of sentences. Remove filler words, fix grammar, make it read smoothly. Do NOT add any new content.
+
+While cleaning, use this person's writing voice — their word choices and sentence patterns — but do NOT add new ideas or extra sentences:
+{style}
+
+Raw transcription:
+{text}"""
 
 
 MAX_RETRIES = 3
@@ -50,6 +52,12 @@ def polish_stream(raw_text: str):
     failure, and ``{"done": True}`` when finished.
     Retries up to MAX_RETRIES times on 500 errors (usually GPU memory pressure).
     """
+    style = load_style()
+    if style:
+        user_msg = POLISH_USER_TEMPLATE_STYLED.format(style=style, text=raw_text)
+    else:
+        user_msg = POLISH_USER_TEMPLATE.format(text=raw_text)
+
     token_count = 0
     t_start = time.perf_counter()
 
@@ -59,11 +67,13 @@ def polish_stream(raw_text: str):
                      OLLAMA_MODEL, len(raw_text), attempt, MAX_RETRIES)
             t_req = time.perf_counter()
             resp = requests.post(
-                OLLAMA_URL,
+                OLLAMA_CHAT_URL,
                 json={
                     "model": OLLAMA_MODEL,
-                    "prompt": raw_text,
-                    "system": _build_system_prompt(),
+                    "messages": [
+                        {"role": "system", "content": POLISH_SYSTEM},
+                        {"role": "user", "content": user_msg},
+                    ],
                     "stream": True,
                 },
                 stream=True,
@@ -88,7 +98,7 @@ def polish_stream(raw_text: str):
             for line in resp.iter_lines():
                 if line:
                     chunk = json.loads(line)
-                    token = chunk.get("response", "")
+                    token = chunk.get("message", {}).get("content", "")
                     if token:
                         if t_first is None:
                             t_first = time.perf_counter()
@@ -100,7 +110,7 @@ def polish_stream(raw_text: str):
             # Success – don't retry
             break
         except requests.ConnectionError:
-            log.error("Cannot connect to Ollama at %s", OLLAMA_URL)
+            log.error("Cannot connect to Ollama at %s", OLLAMA_CHAT_URL)
             yield {"error": "Cannot connect to Ollama. Is it running? (ollama serve)"}
             break
         except requests.HTTPError as e:
