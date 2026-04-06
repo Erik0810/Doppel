@@ -1,6 +1,8 @@
 # Doppel
 
-Live speech-to-text transcription with automatic cleanup. Records from your mic, transcribes with Whisper, then runs the raw text through deepseek-r1:14b via Ollama to clean up filler words and formatting.
+Live speech-to-text transcription that learns how you write. Records from your mic, transcribes with Whisper, then polishes the raw text through deepseek-r1:14b via Ollama. 
+
+Upload your previous writing and Doppel learns your style, so polished output sounds like you wrote it.
 
 Two-panel UI: left side shows raw transcription, right side shows the cleaned version.
 
