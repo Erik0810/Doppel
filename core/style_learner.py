@@ -41,20 +41,21 @@ Answer each question with specific evidence. Do NOT discuss the topic or content
 8. Look at any 3 consecutive sentences. How does sentence 2 connect to sentence 1? Does it repeat a keyword, use a pronoun reference, or use a transition word?"""
 
 STYLE_PASS2_TEMPLATE = """\
-Below is a mechanical analysis of someone's writing. Convert it into 8-12 bullet-point style rules that could be applied when rewriting ANY short text to match this person's voice.
+Below is a mechanical analysis of someone's writing. Write a SHORT paragraph (3-5 sentences max) describing how this person writes. This paragraph will be given to another AI that cleans up speech transcriptions so they sound like this person wrote them.
 
 ANALYSIS:
 {analysis}
 
-FORMAT RULES:
-- Each bullet starts with "- "
-- Each bullet must be a concrete, actionable instruction (e.g. "Use passive voice constructions like 'is demonstrated by', 'was observed to'")
-- Include example words/phrases in quotes where possible
-- Do NOT mention any specific topic, subject, or field
-- These rules will be applied to a 5-10 sentence paragraph, so focus on sentence-level patterns only
+RULES FOR YOUR OUTPUT:
+- Write a single short paragraph in plain prose, NOT a bullet list
+- Describe the voice the way you'd describe a friend's writing: "They tend to write long formal sentences, favor passive voice like 'is demonstrated by', and hedge with words like 'may' and 'could'."
+- Include specific example words and phrases in quotes
+- Do NOT mention any topic, subject, or field
+- Do NOT use imperative mood ("Use X", "Incorporate Y") — use descriptive mood ("They tend to X", "This writer favors Y")
 - Respond in English
+- Keep it under 100 words
 
-Output ONLY the bullet list. No preamble."""
+Output ONLY the paragraph. No preamble, no headers."""
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
