@@ -73,3 +73,50 @@ def polish():
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache",
                              "X-Accel-Buffering": "no"})
+
+
+ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+
+
+@bp.route("/learn-style", methods=["POST"])
+def learn_style():
+    """Accept file uploads, extract text, and stream style-learning progress."""
+    import os
+
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify(error="No files uploaded"), 400
+
+    # Extract text from all uploaded files
+    combined_parts = []
+    for f in files:
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return jsonify(error=f"Unsupported file type: {f.filename}"), 400
+        try:
+            file_bytes = f.read()
+            text = engine.extract_file_text(f.filename, file_bytes)
+            if text.strip():
+                combined_parts.append(text)
+        except Exception as e:
+            return jsonify(error=f"Failed to read {f.filename}: {e}"), 400
+
+    if not combined_parts:
+        return jsonify(error="No text could be extracted from the uploaded files"), 400
+
+    combined_text = "\n\n---\n\n".join(combined_parts)
+
+    def generate():
+        for chunk in engine.learn_writing_style(combined_text):
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})
+
+
+@bp.route("/writing-style")
+def writing_style():
+    """Return the currently saved writing style."""
+    style = engine.get_writing_style()
+    return jsonify(style=style)

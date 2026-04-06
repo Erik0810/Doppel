@@ -1,5 +1,5 @@
 """
-Ollama-based text polisher for cleaning up raw transcriptions.
+Ollama-based text polisher – single-pass with deepseek-r1:14b.
 """
 
 import json
@@ -7,100 +7,99 @@ import logging
 import time
 import requests
 
+from core.style_learner import load_style
+
 log = logging.getLogger(__name__)
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "mistral"
+OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
+MODEL = "deepseek-r1:14b"
 
-POLISH_PROMPT = """\
-You are a text cleanup assistant. You receive raw speech-to-text transcription.
+SYSTEM_PROMPT = """\
+Clean up this speech transcription. Remove filler words, fix grammar, keep the same meaning and sentence count. Output ONLY the cleaned text."""
 
-Your ONLY job is to clean up the transcription:
-1. Remove filler words (um, uh, you know, like, so, okay), false starts, and repeated phrases.
-2. Fix obvious mistranscriptions and grammar errors.
-3. Restructure into clear, well-punctuated sentences and paragraphs.
+STYLED_SYSTEM_PROMPT = """\
+Clean up this speech transcription. Remove filler words, fix grammar, keep the same meaning and sentence count. Lightly match this writing voice: {style}
 
-CRITICAL RULES:
-- NEVER add, invent, or fabricate information that is not in the original transcription.
-- NEVER change the meaning or topic of what was said.
-- If the input is casual or non-technical, keep it casual — just make it read cleanly.
-- Do NOT wrap output in quotation marks.
-- Do NOT add labels like "From your transcription:" or any other headers/prefixes.
-- Output ONLY the cleaned-up text. No preamble, no commentary, no framing."""
+Output ONLY the cleaned text."""
 
 
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
+def unload_model():
+    """Tell Ollama to unload deepseek from VRAM."""
+    try:
+        requests.post(
+            OLLAMA_CHAT_URL,
+            json={"model": MODEL, "keep_alive": 0},
+            timeout=10,
+        )
+        log.info("Unloaded %s from Ollama VRAM", MODEL)
+    except Exception:
+        log.warning("Failed to unload %s from Ollama", MODEL)
 
 
 def polish_stream(raw_text: str):
-    """Yield polished tokens from Ollama as they arrive.
+    """Single-pass polish with deepseek-r1:14b. Streams tokens to the client.
 
-    Yields dicts: ``{"token": str}`` for content, ``{"error": str}`` on
-    failure, and ``{"done": True}`` when finished.
-    Retries up to MAX_RETRIES times on 500 errors (usually GPU memory pressure).
+    Yields dicts: {"token": str}, {"error": str}, {"done": True}.
     """
-    token_count = 0
+    style = load_style()
+    if style:
+        system = STYLED_SYSTEM_PROMPT.format(style=style)
+    else:
+        system = SYSTEM_PROMPT
+
+    input_words = len(raw_text.split())
+    # deepseek-r1 uses ~200-500 tokens for <think> reasoning before output,
+    # so we need a large budget: thinking overhead + actual output cap
+    max_tokens = int(input_words * 1.5) + 600
+    log.info("Polish: ~%d input words, cap %d tokens (incl. thinking), style=%s", input_words, max_tokens, bool(style))
+
     t_start = time.perf_counter()
+    token_count = 0
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            log.info("Sending polish request to Ollama (%s) – %d chars of input (attempt %d/%d)",
-                     OLLAMA_MODEL, len(raw_text), attempt, MAX_RETRIES)
-            t_req = time.perf_counter()
-            resp = requests.post(
-                OLLAMA_URL,
-                json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": raw_text,
-                    "system": POLISH_PROMPT,
-                    "stream": True,
-                },
-                stream=True,
-                timeout=120,
-            )
+    try:
+        resp = requests.post(
+            OLLAMA_CHAT_URL,
+            json={
+                "model": MODEL,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": raw_text},
+                ],
+                "stream": True,
+                "options": {"num_predict": max_tokens},
+            },
+            stream=True,
+            timeout=180,
+        )
+        resp.raise_for_status()
 
-            # On 500, log the actual response body and retry
-            if resp.status_code == 500:
-                body = resp.text
-                log.warning("Ollama returned 500 (attempt %d/%d): %s", attempt, MAX_RETRIES, body)
-                if attempt < MAX_RETRIES:
-                    time.sleep(RETRY_DELAY)
-                    continue
-                else:
-                    yield {"error": f"Ollama keeps returning 500 after {MAX_RETRIES} attempts. Response: {body[:200]}"}
-                    break
+        in_think = False
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            chunk = json.loads(line)
+            token = chunk.get("message", {}).get("content", "")
+            if chunk.get("done"):
+                break
+            if not token:
+                continue
+            if "<think>" in token:
+                in_think = True
+                continue
+            if "</think>" in token:
+                in_think = False
+                continue
+            if in_think:
+                continue
+            token_count += 1
+            yield {"token": token}
 
-            resp.raise_for_status()
-            log.info("Ollama responded (HTTP %s) in %.1fs – streaming tokens…",
-                     resp.status_code, time.perf_counter() - t_req)
-            t_first = None
-            for line in resp.iter_lines():
-                if line:
-                    chunk = json.loads(line)
-                    token = chunk.get("response", "")
-                    if token:
-                        if t_first is None:
-                            t_first = time.perf_counter()
-                            log.info("First token received %.1fs after request", t_first - t_req)
-                        token_count += 1
-                        yield {"token": token}
-                    if chunk.get("done"):
-                        break
-            # Success – don't retry
-            break
-        except requests.ConnectionError:
-            log.error("Cannot connect to Ollama at %s", OLLAMA_URL)
-            yield {"error": "Cannot connect to Ollama. Is it running? (ollama serve)"}
-            break
-        except requests.HTTPError as e:
-            log.error("Ollama HTTP error: %s", e)
-            yield {"error": f"Ollama error: {e}. Have you run: ollama pull {OLLAMA_MODEL}?"}
-            break
-        except Exception as e:
-            log.exception("Unexpected error during polish")
-            yield {"error": str(e)}
-            break
+    except requests.ConnectionError:
+        yield {"error": "Cannot connect to Ollama. Is it running?"}
+    except Exception as e:
+        log.exception("Polish error")
+        yield {"error": str(e)}
 
-    log.info("Polish complete – %d tokens in %.1fs", token_count, time.perf_counter() - t_start)
+    unload_model()
+    log.info("Polish done – %d tokens in %.1fs", token_count, time.perf_counter() - t_start)
     yield {"done": True}

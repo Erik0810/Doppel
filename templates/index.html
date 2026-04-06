@@ -162,6 +162,188 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* ---- Customize Agent button ---- */
+    #customizeBtn {
+      font-size: 1rem;
+      width: 200px;
+      height: 48px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      background: #7c3aed;
+      transition: background .2s;
+      margin-left: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #customizeBtn:hover { background: #6d28d9; }
+
+    /* ---- Modal overlay ---- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
+      width: 480px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .modal-header h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: #999;
+      padding: 0 4px;
+    }
+    .modal-close:hover { color: #333; }
+
+    .modal-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* file upload area */
+    .upload-area {
+      border: 2px dashed #d0d0d0;
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      margin-bottom: 16px;
+    }
+    .upload-area:hover { border-color: #7c3aed; background: #faf5ff; }
+    .upload-area p { color: #888; font-size: 0.9rem; margin-bottom: 8px; }
+    .upload-area small { color: #aaa; font-size: 0.8rem; }
+    .upload-area input[type="file"] { display: none; }
+
+    .file-list {
+      list-style: none;
+      margin-bottom: 16px;
+    }
+    .file-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      background: #f9fafb;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+      color: #444;
+    }
+    .file-list li .remove-file {
+      background: none;
+      border: none;
+      color: #dc2626;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0 4px;
+    }
+
+    /* learn button */
+    #learnBtn {
+      display: block;
+      width: 100%;
+      height: 44px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      background: #2563eb;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background .2s;
+    }
+    #learnBtn:hover { background: #1d4ed8; }
+    #learnBtn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    #learnBtn.learning::before {
+      content: '';
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: spin .6s linear infinite;
+    }
+
+    .style-output {
+      margin-top: 16px;
+      padding: 12px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      color: #166534;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .thinking-status {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #92400e;
+      display: none;
+    }
+
+    .thinking-status::before {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid rgba(146,64,14,.3);
+      border-top-color: #92400e;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+    }
+
+    .style-status {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #6b7280;
+    }
+    .style-status.has-style { color: #16a34a; }
   </style>
 </head>
 <body>
@@ -182,6 +364,29 @@
   <div class="controls">
     <button id="btn">Start Recording</button>
     <button id="clearBtn">Clear Page</button>
+    <button id="customizeBtn">Customize Agent</button>
+  </div>
+
+  <!-- Customize Agent Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Customize Agent</h2>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="upload-area" id="uploadArea">
+          <p>Upload your previous works</p>
+          <small>.pdf or .docx — multiple files allowed</small>
+          <input type="file" id="fileInput" multiple accept=".pdf,.docx" />
+        </div>
+        <ul class="file-list" id="fileList"></ul>
+        <button id="learnBtn" disabled>Learn Writing Style</button>
+        <div class="thinking-status" id="thinkingStatus">Analysing writing patterns…</div>
+        <div class="style-output" id="styleOutput" style="display:none;"></div>
+        <div class="style-status" id="styleStatus"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -189,6 +394,180 @@
     const polishedPage = document.getElementById('polishedPage');
     const btn          = document.getElementById('btn');
     const clearBtn     = document.getElementById('clearBtn');
+
+    // ---- Customize Agent modal ----
+    const customizeBtn  = document.getElementById('customizeBtn');
+    const modalOverlay  = document.getElementById('modalOverlay');
+    const modalClose    = document.getElementById('modalClose');
+    const uploadArea    = document.getElementById('uploadArea');
+    const fileInput     = document.getElementById('fileInput');
+    const fileListEl    = document.getElementById('fileList');
+    const learnBtn      = document.getElementById('learnBtn');
+    const thinkingStatus = document.getElementById('thinkingStatus');
+    const styleOutput   = document.getElementById('styleOutput');
+    const styleStatus   = document.getElementById('styleStatus');
+
+    let selectedFiles = [];
+
+    // Load existing style on page load
+    (async () => {
+      try {
+        const resp = await fetch('/writing-style');
+        const data = await resp.json();
+        if (data.style) {
+          styleStatus.textContent = '✓ Writing style loaded';
+          styleStatus.className = 'style-status has-style';
+        }
+      } catch (_) {}
+    })();
+
+    customizeBtn.addEventListener('click', () => {
+      modalOverlay.classList.add('open');
+    });
+
+    modalClose.addEventListener('click', () => {
+      modalOverlay.classList.remove('open');
+    });
+
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) modalOverlay.classList.remove('open');
+    });
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.style.borderColor = '#7c3aed';
+      uploadArea.style.background = '#faf5ff';
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.style.borderColor = '#d0d0d0';
+      uploadArea.style.background = '';
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.style.borderColor = '#d0d0d0';
+      uploadArea.style.background = '';
+      addFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', () => {
+      addFiles(fileInput.files);
+      fileInput.value = '';
+    });
+
+    function addFiles(fileListObj) {
+      for (const f of fileListObj) {
+        const ext = f.name.split('.').pop().toLowerCase();
+        if (ext === 'pdf' || ext === 'docx') {
+          // Avoid duplicates by name
+          if (!selectedFiles.some(sf => sf.name === f.name)) {
+            selectedFiles.push(f);
+          }
+        }
+      }
+      renderFileList();
+    }
+
+    function renderFileList() {
+      fileListEl.innerHTML = '';
+      selectedFiles.forEach((f, i) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${f.name}</span><button class="remove-file" data-idx="${i}">&times;</button>`;
+        fileListEl.appendChild(li);
+      });
+      learnBtn.disabled = selectedFiles.length === 0;
+
+      fileListEl.querySelectorAll('.remove-file').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.target.dataset.idx);
+          selectedFiles.splice(idx, 1);
+          renderFileList();
+        });
+      });
+    }
+
+    learnBtn.addEventListener('click', async () => {
+      if (selectedFiles.length === 0) return;
+
+      learnBtn.disabled = true;
+      learnBtn.textContent = 'Learning…';
+      learnBtn.classList.add('learning');
+      thinkingStatus.style.display = 'none';
+      styleOutput.style.display = 'none';
+      styleOutput.textContent = '';
+      styleStatus.textContent = '';
+      styleStatus.className = 'style-status';
+
+      const formData = new FormData();
+      selectedFiles.forEach(f => formData.append('files', f));
+
+      try {
+        const resp = await fetch('/learn-style', { method: 'POST', body: formData });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        styleOutput.style.display = 'block';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = JSON.parse(line.slice(6));
+
+            if (data.status) {
+              const labels = {
+                learning: 'Preparing…',
+                analyzing: 'Pass 1: Analysing writing mechanics…',
+                synthesizing: 'Pass 2: Synthesizing style rules…',
+              };
+              thinkingStatus.textContent = labels[data.status] || data.status;
+              thinkingStatus.style.display = 'block';
+              learnBtn.textContent = labels[data.status] || 'Learning…';
+            }
+            if (data.error) {
+              thinkingStatus.style.display = 'none';
+              styleOutput.style.display = 'block';
+              styleOutput.textContent += '\nError: ' + data.error;
+              break;
+            }
+            if (data.thinking) {
+              // Show thinking indicator while model reasons
+              thinkingStatus.style.display = 'block';
+            }
+            if (data.token) {
+              // First real token — hide thinking, show output
+              thinkingStatus.style.display = 'none';
+              styleOutput.style.display = 'block';
+              styleOutput.textContent += data.token;
+              styleOutput.scrollTop = styleOutput.scrollHeight;
+            }
+            if (data.done) {
+              thinkingStatus.style.display = 'none';
+              styleStatus.textContent = '✓ Writing style saved';
+              styleStatus.className = 'style-status has-style';
+            }
+          }
+        }
+      } catch (err) {
+        styleOutput.style.display = 'block';
+        styleOutput.textContent = 'Error: ' + err.message;
+      }
+
+      thinkingStatus.style.display = 'none';
+      learnBtn.textContent = 'Learn Writing Style';
+      learnBtn.classList.remove('learning');
+      learnBtn.disabled = selectedFiles.length === 0;
+    });
 
 
 
