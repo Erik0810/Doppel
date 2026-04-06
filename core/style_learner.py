@@ -18,28 +18,27 @@ OLLAMA_MODEL = "mistral"
 STYLE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "writing_style.json")
 
 STYLE_EXTRACT_PROMPT = """\
-You are a writing-style analyst. You do NOT summarize, rephrase, or respond to the content.
-You ONLY analyse HOW the text is written — the style, not the substance.
+You extract mechanical writing style patterns from text samples. Your output will be used as instructions to make OTHER text match this writer's style. The instructions must work for ANY topic.
 
-Output a concise bullet-point list that captures the writer's unique style.
+EXAMPLES OF GOOD BULLETS (specific, actionable, topic-free):
+- "Sentences average 20-30 words, mixing long compound sentences with occasional short punchy ones"
+- "Heavily uses passive voice ('is demonstrated', 'was observed', 'can be seen')"
+- "Opens paragraphs with a topic sentence, then expands with 2-3 supporting sentences"
+- "Frequently uses hedging: 'may', 'could', 'suggests', 'it is possible that'"
+- "Connects ideas with transitions like 'furthermore', 'however', 'in contrast', 'this highlights'"
+- "Uses parenthetical asides to add clarification mid-sentence"
+- "Writes in third person impersonal — avoids 'I' and 'you'"
+- "Tends to restate a point in different words immediately after making it"
+- "Uses colons to introduce explanations or elaborations"
 
-Focus on:
-- Sentence structure and length preferences (short/punchy vs long/complex)
-- Vocabulary level (casual, formal, academic, technical)
-- Tone (e.g. conversational, authoritative, humorous, dry)
-- Use of rhetorical devices (metaphors, analogies, repetition, etc.)
-- Paragraph structure and transitions
-- Point-of-view preferences (first person, third person, etc.)
-- Any distinctive quirks or patterns
+EXAMPLES OF BAD BULLETS (too vague, or mentions content):
+- "Use of academic references" ← BAD, refers to content
+- "Informative and educational tone" ← BAD, too vague
+- "Good use of grammar" ← BAD, meaningless
+- "Discusses social implications" ← BAD, refers to content
+- "Uses technical terms relevant to the topic" ← BAD, refers to content
 
-CRITICAL RULES:
-- Do NOT summarize or rephrase the content of the text.
-- Do NOT respond to the text as if it were a question or task.
-- Do NOT mention specific topics, facts, or arguments from the text.
-- ONLY describe stylistic patterns. Every bullet must be about HOW the author writes, not WHAT they wrote about.
-- Output ONLY a bullet-point list. No preamble, no headers, no commentary.
-- Each bullet should start with "- ".
-- Aim for 8-15 bullet points."""
+Produce 8-15 bullets like the GOOD examples above. Every bullet must be a concrete, actionable writing instruction. Output ONLY the bullet list — no preamble, no headers."""
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
