@@ -7,6 +7,8 @@ import logging
 import time
 import requests
 
+from core.style_learner import load_style
+
 log = logging.getLogger(__name__)
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -27,6 +29,14 @@ CRITICAL RULES:
 - Do NOT wrap output in quotation marks.
 - Do NOT add labels like "From your transcription:" or any other headers/prefixes.
 - Output ONLY the cleaned-up text. No preamble, no commentary, no framing."""
+
+
+def _build_system_prompt() -> str:
+    """Build the full system prompt, injecting the user's writing style if available."""
+    style = load_style()
+    if style:
+        return POLISH_PROMPT + "\n\nAdditionally, match the following writing style:\n" + style
+    return POLISH_PROMPT
 
 
 MAX_RETRIES = 3
@@ -53,7 +63,7 @@ def polish_stream(raw_text: str):
                 json={
                     "model": OLLAMA_MODEL,
                     "prompt": raw_text,
-                    "system": POLISH_PROMPT,
+                    "system": _build_system_prompt(),
                     "stream": True,
                 },
                 stream=True,

@@ -11,6 +11,12 @@ import queue
 
 from core.transcriber import WhisperTranscriber
 from core.polisher import polish_stream
+from core.style_learner import (
+    extract_text_from_pdf,
+    extract_text_from_docx,
+    learn_style,
+    load_style,
+)
 
 log = logging.getLogger(__name__)
 
@@ -56,3 +62,27 @@ class DoppelEngine:
     def polish(raw_text: str):
         """Yield dicts from the polisher stream (token / error / done)."""
         yield from polish_stream(raw_text)
+
+    # ------------------------------------------------------------------
+    # Writing-style learning
+    # ------------------------------------------------------------------
+    @staticmethod
+    def extract_file_text(filename: str, file_bytes: bytes) -> str:
+        """Extract plain text from an uploaded PDF or DOCX."""
+        lower = filename.lower()
+        if lower.endswith(".pdf"):
+            return extract_text_from_pdf(file_bytes)
+        elif lower.endswith(".docx"):
+            return extract_text_from_docx(file_bytes)
+        else:
+            raise ValueError(f"Unsupported file type: {filename}")
+
+    @staticmethod
+    def learn_writing_style(combined_text: str):
+        """Yield progress dicts from the style learner."""
+        yield from learn_style(combined_text)
+
+    @staticmethod
+    def get_writing_style() -> str | None:
+        """Return the saved writing style, or None."""
+        return load_style()

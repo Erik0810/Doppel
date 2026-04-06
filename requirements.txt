@@ -5,3 +5,5 @@ sounddevice
 numpy
 flask
 requests
+python-docx
+PyPDF2
