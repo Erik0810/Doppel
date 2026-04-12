@@ -49,11 +49,18 @@ class WhisperTranscriber:
         self._device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self._torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
+        if torch.cuda.is_available():
+            # Global flag: lets cuDNN auto-tune convolution kernels for the
+            # input sizes Whisper uses.  Safe here because Whisper is the only
+            # PyTorch CUDA model in this process (Ollama runs out-of-process).
+            torch.backends.cudnn.benchmark = True
+
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             self.model_id,
-            dtype=self._torch_dtype,
+            torch_dtype=self._torch_dtype,
             low_cpu_mem_usage=True,
             use_safetensors=True,
+            attn_implementation="sdpa",  # PyTorch Scaled Dot-Product Attention – faster & lower VRAM
         )
         model.to(self._device)
         self._model = model
@@ -144,11 +151,12 @@ class WhisperTranscriber:
             if np.max(np.abs(chunk)) < SILENCE_THRESHOLD:
                 continue
 
-            result = self._pipe(
-                {"raw": chunk, "sampling_rate": SAMPLE_RATE},
-                generate_kwargs={"language": "en", "num_beams": 5},
-                return_timestamps=True,
-            )
+            with torch.inference_mode():
+                result = self._pipe(
+                    {"raw": chunk, "sampling_rate": SAMPLE_RATE},
+                    generate_kwargs={"language": "en"},
+                    return_timestamps=True,
+                )
             text = result["text"].strip()
             if text and self._on_text:
                 text = self._dedup(text)

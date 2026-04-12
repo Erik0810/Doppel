@@ -51,7 +51,16 @@ def polish_stream(raw_text: str):
     # deepseek-r1 uses ~200-500 tokens for <think> reasoning before output,
     # so we need a large budget: thinking overhead + actual output cap
     max_tokens = int(input_words * 1.5) + 600
-    log.info("Polish: ~%d input words, cap %d tokens (incl. thinking), style=%s", input_words, max_tokens, bool(style))
+
+    # Size the context window to what we actually need: system prompt
+    # (~100 tokens) + input + generation budget, with a small margin.
+    # This avoids allocating a large default KV-cache on low-VRAM GPUs.
+    # ~1.4 tokens per English word is a conservative average for sub-word tokenizers.
+    estimated_input_tokens = int(input_words * 1.4) + 200
+    num_ctx = max(1024, estimated_input_tokens + max_tokens + 256)
+
+    log.info("Polish: ~%d input words, cap %d tokens (incl. thinking), num_ctx=%d, style=%s",
+             input_words, max_tokens, num_ctx, bool(style))
 
     t_start = time.perf_counter()
     token_count = 0
@@ -66,7 +75,11 @@ def polish_stream(raw_text: str):
                     {"role": "user", "content": raw_text},
                 ],
                 "stream": True,
-                "options": {"num_predict": max_tokens},
+                "options": {
+                    "num_predict": max_tokens,
+                    "num_ctx": num_ctx,
+                    "num_batch": 128,
+                },
             },
             stream=True,
             timeout=180,
