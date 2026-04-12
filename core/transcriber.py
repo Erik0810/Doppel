@@ -50,8 +50,9 @@ class WhisperTranscriber:
         self._torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
         if torch.cuda.is_available():
-            # Let cuDNN auto-tune kernels for the input sizes we use,
-            # giving a noticeable speed-up on lower-end GPUs.
+            # Global flag: lets cuDNN auto-tune convolution kernels for the
+            # input sizes Whisper uses.  Safe here because Whisper is the only
+            # PyTorch CUDA model in this process (Ollama runs out-of-process).
             torch.backends.cudnn.benchmark = True
 
         model = AutoModelForSpeechSeq2Seq.from_pretrained(

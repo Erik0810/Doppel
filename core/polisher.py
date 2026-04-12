@@ -55,7 +55,8 @@ def polish_stream(raw_text: str):
     # Size the context window to what we actually need: system prompt
     # (~100 tokens) + input + generation budget, with a small margin.
     # This avoids allocating a large default KV-cache on low-VRAM GPUs.
-    estimated_input_tokens = int(input_words * 1.4) + 200  # rough word→token ratio + system prompt
+    # ~1.4 tokens per English word is a conservative average for sub-word tokenizers.
+    estimated_input_tokens = int(input_words * 1.4) + 200
     num_ctx = max(1024, estimated_input_tokens + max_tokens + 256)
 
     log.info("Polish: ~%d input words, cap %d tokens (incl. thinking), num_ctx=%d, style=%s",

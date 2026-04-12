@@ -146,6 +146,8 @@ def learn_style(combined_text: str):
 
         # Pass 1 ingests up to 12k chars (~4-5k tokens) plus a long prompt
         # template, so size the context window accordingly.
+        # ~0.5 tokens per char is a rough upper bound for English prose;
+        # the +2048 covers the response the model needs to generate.
         pass1_input_chars = len(combined_text) + len(STYLE_PASS1_TEMPLATE)
         pass1_ctx = max(4096, int(pass1_input_chars * 0.5) + 2048)
 
