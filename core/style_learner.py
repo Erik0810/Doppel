@@ -77,7 +77,8 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
-def _chat_collect(model: str, system: str, user: str, timeout: int = 600) -> str:
+def _chat_collect(model: str, system: str, user: str, timeout: int = 600,
+                  num_ctx: int = 4096) -> str:
     """Send a chat request and collect the full response, stripping <think> blocks."""
     resp = requests.post(
         OLLAMA_CHAT_URL,
@@ -88,6 +89,10 @@ def _chat_collect(model: str, system: str, user: str, timeout: int = 600) -> str
                 {"role": "user", "content": user},
             ],
             "stream": True,
+            "options": {
+                "num_ctx": num_ctx,
+                "num_batch": 128,
+            },
         },
         stream=True,
         timeout=timeout,
@@ -139,10 +144,16 @@ def learn_style(combined_text: str):
                  STYLE_LEARN_MODEL, len(combined_text))
         yield {"status": "analyzing"}
 
+        # Pass 1 ingests up to 12k chars (~4-5k tokens) plus a long prompt
+        # template, so size the context window accordingly.
+        pass1_input_chars = len(combined_text) + len(STYLE_PASS1_TEMPLATE)
+        pass1_ctx = max(4096, int(pass1_input_chars * 0.5) + 2048)
+
         analysis = _chat_collect(
             STYLE_LEARN_MODEL,
             STYLE_SYSTEM_MSG,
             STYLE_PASS1_TEMPLATE.format(text=combined_text),
+            num_ctx=pass1_ctx,
         )
         log.info("Pass 1 complete – %d chars of analysis", len(analysis))
 
@@ -159,6 +170,10 @@ def learn_style(combined_text: str):
                     {"role": "user", "content": STYLE_PASS2_TEMPLATE.format(analysis=analysis)},
                 ],
                 "stream": True,
+                "options": {
+                    "num_ctx": 4096,
+                    "num_batch": 128,
+                },
             },
             stream=True,
             timeout=600,
